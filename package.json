@@ -1,5 +1,5 @@
 {
   "scripts": {
-    "dev": "go run problems/prime-time/main.go"
+    "dev": "go run problems/means-to-end/main.go"
   }
 }
