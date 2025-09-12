@@ -39,7 +39,7 @@ func handleConn(conn net.Conn, queries *db.Queries) {
 		command, err := parseCommand(encodedCommand, connectionId)
 
 		if err != nil {
-			log.Println(err)
+			log.Println("error:", err)
 			return
 		}
 
@@ -51,7 +51,7 @@ func handleConn(conn net.Conn, queries *db.Queries) {
 				Timestamp: int64(parsedCommand.Timestamp),
 				Price:     int64(parsedCommand.Price),
 			}); err != nil {
-				log.Println(err)
+				log.Println("error: ", err)
 				return
 			}
 
@@ -63,7 +63,7 @@ func handleConn(conn net.Conn, queries *db.Queries) {
 			})
 
 			if err != nil {
-				log.Println(err)
+				log.Println("error: ", err)
 				return
 			}
 
@@ -76,14 +76,14 @@ func handleConn(conn net.Conn, queries *db.Queries) {
 			_, err = binary.Encode(result[:], binary.BigEndian, int32(mean))
 
 			if err != nil {
-				log.Println(err)
+				log.Println("error: ", err)
 				return
 			}
 
 			_, err = conn.Write(result[:])
 
 			if err != nil {
-				log.Println(err)
+				log.Println("error: ", err)
 				return
 			}
 		}
@@ -175,11 +175,13 @@ var ddl string
 func run() error {
 
 	ctx := context.Background()
-	sqliteDb, err := sql.Open("sqlite", ":memory:")
+	sqliteDb, err := sql.Open("sqlite", "file::memory:?cache=shared")
 
 	if err != nil {
 		return err
 	}
+
+	log.Println(ddl)
 
 	if _, err := sqliteDb.ExecContext(ctx, ddl); err != nil {
 		return err
