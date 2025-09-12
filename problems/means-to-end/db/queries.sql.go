@@ -41,6 +41,42 @@ func (q *Queries) GetAllAssestsPrice(ctx context.Context) ([]AssestPrice, error)
 	return items, nil
 }
 
+const getAssestPriceInTimeRange = `-- name: GetAssestPriceInTimeRange :many
+SELECT price FROM assest_price WHERE
+    assest_id = ?1 AND
+    timestamp >= ?2 AND
+    timestamp <= ?3
+`
+
+type GetAssestPriceInTimeRangeParams struct {
+	AssestID     string
+	MinTimestamp int64
+	MaxTimestamp int64
+}
+
+func (q *Queries) GetAssestPriceInTimeRange(ctx context.Context, arg GetAssestPriceInTimeRangeParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, getAssestPriceInTimeRange, arg.AssestID, arg.MinTimestamp, arg.MaxTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var price int64
+		if err := rows.Scan(&price); err != nil {
+			return nil, err
+		}
+		items = append(items, price)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertAssestPrice = `-- name: InsertAssestPrice :exec
 
 INSERT INTO assest_price
