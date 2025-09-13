@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
@@ -40,6 +41,8 @@ func (r *Room) addUser(user *User) error {
 			defer r.mu.Unlock()
 			user.close()
 			delete(r.users, user.id)
+			log.Printf("user %s left the room\n", user.name)
+			r.broadcast(fmt.Sprintf("* %s has left the room", user.name))
 		}()
 
 		user.listenForChatMessages(otherUsers)

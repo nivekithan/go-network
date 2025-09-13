@@ -71,7 +71,6 @@ func (u *User) listenForChatMessages(otherUsers []string) {
 		}
 
 		log.Printf("Got msg: %s", msg)
-
 	}
 }
 
@@ -96,7 +95,6 @@ func (u *User) write(msg string) error {
 func (u *User) read() (string, error) {
 	msg, err := u.reader.ReadString('\n')
 	if err != nil {
-		log.Printf("error reading message from user %s: %v", u.id, err)
 		return "", err
 	}
 
