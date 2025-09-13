@@ -50,28 +50,11 @@ func (u *User) askAndSetName() error {
 		return fmt.Errorf("Invalid name: %s", name)
 	}
 
+	log.Printf("Got valid name: %s\n", name)
+
 	u.name = name
 
 	return nil
-}
-
-func (u *User) listenForChatMessages(otherUsers []string) {
-	currentUsersInfoMsg := fmt.Sprintf("* Current users: %s", strings.Join(otherUsers, ", "))
-
-	if err := u.write(currentUsersInfoMsg); err != nil {
-		return
-	}
-
-	for {
-
-		msg, err := u.read()
-
-		if err != nil {
-			return
-		}
-
-		log.Printf("Got msg: %s", msg)
-	}
 }
 
 func (u *User) close() {
@@ -108,10 +91,12 @@ func isValidName(name string) bool {
 		return false
 	}
 
-	pattern := "[0-9a-zA-Z]+$"
+	pattern := "^[0-9a-zA-Z]+$"
 
 	re := regexp.MustCompile(pattern)
 
-	return re.MatchString(name)
+	result := re.MatchString(name)
+
+	return result
 
 }

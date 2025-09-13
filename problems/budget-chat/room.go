@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 )
 
@@ -35,7 +36,7 @@ func (r *Room) addUser(user *User) error {
 
 	r.users[user.id] = user
 
-	go func() {
+	go func(user *User) {
 		defer func() {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -45,8 +46,24 @@ func (r *Room) addUser(user *User) error {
 			r.broadcast(fmt.Sprintf("* %s has left the room", user.name))
 		}()
 
-		user.listenForChatMessages(otherUsers)
-	}()
+		currentUsersInfoMsg := fmt.Sprintf("* Current users: %s", strings.Join(otherUsers, ", "))
+
+		if err := user.write(currentUsersInfoMsg); err != nil {
+			return
+		}
+
+		for {
+			msg, err := user.read()
+
+			if err != nil {
+				return
+			}
+
+			log.Printf("Got msg: %s", msg)
+
+			r.broadcastExcept(fmt.Sprintf("[%s] %s", user.name, msg), user.id)
+		}
+	}(user)
 
 	return nil
 }
@@ -57,6 +74,23 @@ func (r *Room) broadcast(msg string) {
 		if err := user.write(msg); err != nil {
 			// This should never happen normally
 			panic(err)
+		}
+	}
+}
+
+func (r *Room) broadcastExcept(msg string, userId string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, user := range r.users {
+		if user.id == userId {
+			continue
+		}
+
+		if err := user.write(msg); err != nil {
+			// This should never happen normally
+			log.Printf("error: %v", err)
+			return
 		}
 	}
 }
