@@ -1,5 +1,5 @@
 {
   "scripts": {
-    "dev": "go run problems/budget-chat/*.go"
+    "dev": "go run problems/unusal-database-program/*.go"
   }
 }
