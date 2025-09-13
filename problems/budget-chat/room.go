@@ -30,6 +30,8 @@ func (r *Room) addUser(user *User) error {
 		otherUsers = append(otherUsers, otherUser.name)
 	}
 
+	r.broadcast(fmt.Sprintf("* %s has joined the room", user.name))
+
 	r.users[user.id] = user
 
 	go func() {
@@ -44,4 +46,14 @@ func (r *Room) addUser(user *User) error {
 	}()
 
 	return nil
+}
+
+// Expects to be called by a function with lock hold
+func (r *Room) broadcast(msg string) {
+	for _, user := range r.users {
+		if err := user.write(msg); err != nil {
+			// This should never happen normally
+			panic(err)
+		}
+	}
 }
