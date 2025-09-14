@@ -62,6 +62,14 @@ func run() error {
 			continue
 		}
 
+		if msg == "version" {
+			finalResponse := "version=1.0"
+			if _, err := packetConn.WriteTo([]byte(finalResponse), returnAddr); err != nil {
+				return err
+			}
+			continue
+		}
+
 		key := msg
 		value := keyValueStore[key]
 
