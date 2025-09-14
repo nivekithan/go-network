@@ -1,5 +1,5 @@
 {
   "scripts": {
-    "dev": "go run problems/unusal-database-program/*.go"
+    "dev": "go run problems/mob-in-middle/*.go"
   }
 }
