@@ -17,6 +17,7 @@ type ClientError struct {
 
 func (e *ClientError) toBinary() []byte {
 	output := []byte{byte(0x10)}
+	output = append(output, byte(len(e.msg)))
 	output = append(output, []byte(e.msg)...)
 	return output
 }
