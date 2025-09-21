@@ -93,6 +93,13 @@ func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 
 				log.Printf("%+v\n", plate)
 
+				if err := plate.RegisterObservation(ctx, queries, RegisterObservationsParams{
+					RoadID:   camera.road,
+					Location: camera.mile,
+				}); err != nil {
+					return err
+				}
+
 			default:
 				return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
 			}

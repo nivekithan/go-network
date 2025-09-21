@@ -58,6 +58,26 @@ func NewPlate(reader io.Reader) (*Plate, error) {
 
 }
 
+type RegisterObservationsParams struct {
+	RoadID   uint16
+	Location uint16
+}
+
+func (p *Plate) RegisterObservation(ctx context.Context, queries *db.Queries, params RegisterObservationsParams) error {
+	if err := queries.InsertPlateObservation(ctx, db.InsertPlateObservationParams{
+		PlateNumber: p.plate,
+		RoadID:      int64(params.RoadID),
+		Timestamp:   int64(p.timestamp),
+		Location:    int64(params.Location),
+	}); err != nil {
+		return err
+	}
+
+	log.Printf("Registered plate observations %+v, on %+v", p, params)
+
+	return nil
+}
+
 type Ticket struct {
 	plate      string
 	road       uint16
