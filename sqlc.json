@@ -3,12 +3,12 @@
   "sql": [
     {
       "engine": "sqlite",
-      "queries": "./problems/means-to-end/sql/queries.sql",
-      "schema": "./problems/means-to-end/sql/schema.sql",
+      "queries": "./problems/speed-daemon/sql/queries.sql",
+      "schema": "./problems/speed-daemon/sql/schema.sql",
       "gen": {
         "go": {
           "package": "db",
-          "out": "./problems/means-to-end/db"
+          "out": "./problems/speed-daemon/db"
         }
       }
     }

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"log"
 	"net"
 	"time"
+
+	"github.com/nivekithan/go-network/problems/speed-daemon/db"
 )
 
 type ClientError struct {
@@ -146,6 +149,29 @@ func NewIamCamera(reader io.Reader) (*IAmCamera, error) {
 		mile:  mile,
 		limit: limit,
 	}, nil
+}
+
+func (camera *IAmCamera) Register(ctx context.Context, queries *db.Queries) error {
+
+	roadId := int64(camera.road)
+
+	_, err := queries.GetRoad(ctx, roadId)
+
+	if err != nil {
+		if err := queries.InsertRoad(ctx, db.InsertRoadParams{
+			ID:         roadId,
+			SpeedLimit: int64(camera.limit),
+		}); err != nil {
+			return err
+		}
+
+		log.Printf("Registered new road: %d", roadId)
+		return nil
+	}
+
+	log.Printf("Road already registered: %d", roadId)
+
+	return nil
 }
 
 type IamDispatcher struct {

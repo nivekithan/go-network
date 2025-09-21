@@ -2,11 +2,18 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"database/sql"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+
+	_ "embed"
+
+	"github.com/nivekithan/go-network/problems/speed-daemon/db"
+	_ "modernc.org/sqlite"
 )
 
 func clientError(conn net.Conn, msg string) error {
@@ -21,7 +28,7 @@ func clientError(conn net.Conn, msg string) error {
 	return errors.New(clientError.msg)
 }
 
-func hanldeConnectionImp(conn net.Conn) error {
+func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 
 	reader := bufio.NewReader(conn)
 
@@ -30,6 +37,8 @@ func hanldeConnectionImp(conn net.Conn) error {
 	if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
 		return err
 	}
+
+	ctx := context.Background()
 
 	switch messageType {
 	case 0x80:
@@ -41,6 +50,10 @@ func hanldeConnectionImp(conn net.Conn) error {
 		}
 
 		log.Printf("%+v\n", camera)
+
+		if err := camera.Register(ctx, queries); err != nil {
+			return err
+		}
 
 		isWantHeartbeat := false
 
@@ -134,28 +147,46 @@ func hanldeConnectionImp(conn net.Conn) error {
 }
 
 // This function blocks
-func handleConnection(conn net.Conn) {
+func handleConnection(queries *db.Queries, conn net.Conn) {
 	defer conn.Close()
 	defer log.Println("Closing connection")
 
-	if err := hanldeConnectionImp(conn); err != nil {
+	if err := handleConnectionImpl(queries, conn); err != nil {
 		log.Println("error: ", err)
 	}
 }
 
-func handleListner(listner net.Listener) error {
+func handleListner(queries *db.Queries, listner net.Listener) error {
 	conn, err := listner.Accept()
 
 	if err != nil {
 		return err
 	}
 
-	go handleConnection(conn)
+	go handleConnection(queries, conn)
 
 	return nil
 }
 
+//go:embed sql/schema.sql
+var ddl string
+
 func run() error {
+
+	ctx := context.Background()
+	sqliteDb, err := sql.Open("sqlite", "file::memory:?cache=shared")
+
+	if err != nil {
+		return err
+	}
+
+	log.Println(ddl)
+
+	if _, err := sqliteDb.ExecContext(ctx, ddl); err != nil {
+		return err
+	}
+
+	queries := db.New(sqliteDb)
 
 	listner, err := net.Listen("tcp", ":8000")
 
@@ -167,7 +198,7 @@ func run() error {
 
 	for {
 
-		err := handleListner(listner)
+		err := handleListner(queries, listner)
 
 		if err != nil {
 			log.Println("error: handleListner", err)
