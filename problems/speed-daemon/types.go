@@ -63,19 +63,21 @@ type RegisterObservationsParams struct {
 	Location uint16
 }
 
-func (p *Plate) RegisterObservation(ctx context.Context, queries *db.Queries, params RegisterObservationsParams) error {
-	if err := queries.InsertPlateObservation(ctx, db.InsertPlateObservationParams{
+func (p *Plate) RegisterObservation(ctx context.Context, queries *db.Queries, params RegisterObservationsParams) (int64, error) {
+	observation_id, err := queries.InsertPlateObservation(ctx, db.InsertPlateObservationParams{
 		PlateNumber: p.plate,
 		RoadID:      int64(params.RoadID),
 		Timestamp:   int64(p.timestamp),
 		Location:    int64(params.Location),
-	}); err != nil {
-		return err
+	})
+
+	if err != nil {
+		return 0, err
 	}
 
 	log.Printf("Registered plate observations %+v, on %+v", p, params)
 
-	return nil
+	return observation_id, nil
 }
 
 type Ticket struct {

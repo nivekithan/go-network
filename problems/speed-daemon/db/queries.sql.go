@@ -36,6 +36,23 @@ func (q *Queries) GetNextObservation(ctx context.Context, arg GetNextObservation
 	return i, err
 }
 
+const getObservationById = `-- name: GetObservationById :one
+SELECT id, plate_number, timestamp, location, road_id FROM plate_observation WHERE id = ?1
+`
+
+func (q *Queries) GetObservationById(ctx context.Context, id int64) (PlateObservation, error) {
+	row := q.db.QueryRowContext(ctx, getObservationById, id)
+	var i PlateObservation
+	err := row.Scan(
+		&i.ID,
+		&i.PlateNumber,
+		&i.Timestamp,
+		&i.Location,
+		&i.RoadID,
+	)
+	return i, err
+}
+
 const getPreviousObservation = `-- name: GetPreviousObservation :one
 SELECT id, plate_number, timestamp, location, road_id FROM plate_observation WHERE
     plate_number = ?1 AND
@@ -74,8 +91,11 @@ func (q *Queries) GetRoad(ctx context.Context, id int64) (Road, error) {
 	return i, err
 }
 
-const insertPlateObservation = `-- name: InsertPlateObservation :exec
-INSERT INTO plate_observation (plate_number, road_id, timestamp, location) VALUES (?1, ?2, ?3, ?4)
+const insertPlateObservation = `-- name: InsertPlateObservation :one
+INSERT INTO plate_observation
+    (plate_number, road_id, timestamp, location) VALUES
+    (?1, ?2, ?3, ?4)
+RETURNING id
 `
 
 type InsertPlateObservationParams struct {
@@ -85,14 +105,16 @@ type InsertPlateObservationParams struct {
 	Location    int64
 }
 
-func (q *Queries) InsertPlateObservation(ctx context.Context, arg InsertPlateObservationParams) error {
-	_, err := q.db.ExecContext(ctx, insertPlateObservation,
+func (q *Queries) InsertPlateObservation(ctx context.Context, arg InsertPlateObservationParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertPlateObservation,
 		arg.PlateNumber,
 		arg.RoadID,
 		arg.Timestamp,
 		arg.Location,
 	)
-	return err
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const insertRoad = `-- name: InsertRoad :exec

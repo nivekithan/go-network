@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
 
 	_ "embed"
@@ -16,16 +17,74 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func clientError(conn net.Conn, msg string) error {
-	clientError := ClientError{msg: msg}
+var plateObservationChan chan int64
 
-	binary := clientError.toBinary()
+// Blocks the current goroutine
+func processPlateObservation(queries *db.Queries) {
+	ctx := context.Background()
+	log.Println("Processing plate observation")
 
-	if _, err := conn.Write(binary); err != nil {
-		return err
+	for observationId := range plateObservationChan {
+		log.Printf("Processing observation ID: %d\n", observationId)
+		observation, err := queries.GetObservationById(ctx, observationId)
+
+		if err != nil {
+			log.Printf("Error getting observation by ID: %v\n", err)
+			continue
+		}
+
+		road, err := queries.GetRoad(ctx, observation.RoadID)
+
+		if err != nil {
+			log.Printf("Error getting road by ID: %v\n", err)
+			continue
+		}
+
+		accepetedSpeedLimit := road.SpeedLimit
+
+		previousObservation, err := queries.GetPreviousObservation(ctx, db.GetPreviousObservationParams{
+			PlateNumber: observation.PlateNumber,
+			RoadID:      observation.RoadID,
+			Timestamp:   observation.Timestamp,
+		})
+
+		if err == nil {
+			distance := float64(observation.Location - previousObservation.Location)
+			time := float64(observation.Timestamp-previousObservation.Timestamp) / (60 * 60)
+
+			previousSpeedLimitFloat := (distance) / time
+			previousSpeedLimit := int64(math.Round(previousSpeedLimitFloat))
+
+			log.Printf("Speed limit %v", previousSpeedLimit)
+
+			if previousSpeedLimit > accepetedSpeedLimit {
+				log.Printf("Speed limit exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
+				continue
+			}
+		}
+
+		nextObservation, err := queries.GetNextObservation(ctx, db.GetNextObservationParams{
+			PlateNumber: observation.PlateNumber,
+			RoadID:      observation.RoadID,
+			Timestamp:   observation.Timestamp,
+		})
+
+		if err == nil {
+			distance := float64(observation.Location - nextObservation.Location)
+			time := float64(observation.Timestamp-nextObservation.Timestamp) / (60 * 60)
+
+			nextSpeedLimitFloat := (distance) / time
+			nextSpeedLimit := int64(math.Round(nextSpeedLimitFloat))
+
+			log.Printf("Speed limit %v", nextSpeedLimit)
+			if nextSpeedLimit > accepetedSpeedLimit {
+				log.Printf("Speed limit exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
+				continue
+			}
+		}
+
+		log.Printf("Speed limit not exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
 	}
-
-	return errors.New(clientError.msg)
 }
 
 func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
@@ -93,12 +152,16 @@ func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 
 				log.Printf("%+v\n", plate)
 
-				if err := plate.RegisterObservation(ctx, queries, RegisterObservationsParams{
+				observation_id, err := plate.RegisterObservation(ctx, queries, RegisterObservationsParams{
 					RoadID:   camera.road,
 					Location: camera.mile,
-				}); err != nil {
+				})
+
+				if err != nil {
 					return err
 				}
+
+				plateObservationChan <- observation_id
 
 			default:
 				return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
@@ -195,6 +258,10 @@ func run() error {
 
 	queries := db.New(sqliteDb)
 
+	plateObservationChan = make(chan int64)
+
+	go processPlateObservation(queries)
+
 	listner, err := net.Listen("tcp", ":8000")
 
 	if err != nil {
@@ -219,4 +286,16 @@ func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func clientError(conn net.Conn, msg string) error {
+	clientError := ClientError{msg: msg}
+
+	binary := clientError.toBinary()
+
+	if _, err := conn.Write(binary); err != nil {
+		return err
+	}
+
+	return errors.New(clientError.msg)
 }
