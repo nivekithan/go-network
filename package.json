@@ -1,5 +1,5 @@
 {
   "scripts": {
-    "dev": "go run problems/mob-in-middle/*.go"
+    "dev": "go run problems/speed-daemon/*.go"
   }
 }
