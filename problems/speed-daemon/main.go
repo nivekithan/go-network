@@ -9,11 +9,16 @@ import (
 	"net"
 )
 
-func clientError(msg string) []byte {
+func clientError(conn net.Conn, msg string) error {
 	clientError := ClientError{msg: msg}
 
-	return clientError.toBinary()
+	binary := clientError.toBinary()
 
+	if _, err := conn.Write(binary); err != nil {
+		return err
+	}
+
+	return errors.New(clientError.msg)
 }
 
 func hanldeConnectionImp(conn net.Conn) error {
@@ -51,12 +56,7 @@ func hanldeConnectionImp(conn net.Conn) error {
 				log.Println("MessageType=WantHeartbeat")
 
 				if isWantHeartbeat {
-					error := ClientError{msg: fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType)}
-
-					if _, err := conn.Write(error.toBinary()); err != nil {
-						return err
-					}
-					return errors.New(error.msg)
+					return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
 				}
 
 				isWantHeartbeat = true
@@ -71,14 +71,17 @@ func hanldeConnectionImp(conn net.Conn) error {
 
 			case 0x20:
 				log.Println("MessageType=Plate")
-			default:
-				error := ClientError{msg: fmt.Sprintf("unknown messageType: %x", messageType)}
 
-				if _, err := conn.Write(error.toBinary()); err != nil {
+				plate, err := NewPlate(reader)
+
+				if err != nil {
 					return err
 				}
 
-				return errors.New(error.msg)
+				log.Printf("%+v\n", plate)
+
+			default:
+				return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
 			}
 		}
 
@@ -91,18 +94,39 @@ func hanldeConnectionImp(conn net.Conn) error {
 		}
 		log.Printf("%+v\n", camera)
 
+		isWantHeartbeat := false
+
 		for {
 
+			var messageType uint8
+
+			if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
+				return err
+			}
+
+			switch messageType {
+
+			case 0x40:
+				log.Println("MessageType=WantHeartbeat")
+
+				if isWantHeartbeat {
+					return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
+				}
+
+				isWantHeartbeat = true
+
+				hearbeat, err := NewWantHeartbeat(reader)
+
+				if err != nil {
+					return err
+				}
+
+				go hearbeat.SendHeartBeat(conn)
+			}
 		}
 
 	default:
-		error := ClientError{msg: fmt.Sprintf("unknown messageType: %x", messageType)}
-
-		if _, err := conn.Write(error.toBinary()); err != nil {
-			return err
-		}
-
-		return errors.New(error.msg)
+		return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
 	}
 }
 

@@ -23,6 +23,38 @@ type Plate struct {
 	timestamp uint32
 }
 
+func NewPlate(reader io.Reader) (*Plate, error) {
+
+	var plateLength uint8
+
+	if err := binary.Read(reader, binary.BigEndian, &plateLength); err != nil {
+		return nil, err
+	}
+
+	plateBytes := []byte{}
+
+	for i := uint8(0); i < plateLength; i++ {
+		var char byte
+		if err := binary.Read(reader, binary.BigEndian, &char); err != nil {
+			return nil, err
+		}
+		plateBytes = append(plateBytes, char)
+	}
+
+	plate := string(plateBytes)
+
+	var timestamp uint32
+	if err := binary.Read(reader, binary.BigEndian, &timestamp); err != nil {
+		return nil, err
+	}
+
+	return &Plate{
+		plate:     plate,
+		timestamp: timestamp,
+	}, nil
+
+}
+
 type Ticket struct {
 	plate      string
 	road       uint16
