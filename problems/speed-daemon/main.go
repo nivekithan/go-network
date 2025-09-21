@@ -122,6 +122,9 @@ func hanldeConnectionImp(conn net.Conn) error {
 				}
 
 				go hearbeat.SendHeartBeat(conn)
+
+			default:
+				return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
 			}
 		}
 
