@@ -263,135 +263,152 @@ func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 
 	reader := bufio.NewReader(conn)
 
-	var messageType uint8
-
-	if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
-		return err
-	}
-
 	ctx := context.Background()
 
-	switch messageType {
-	case 0x80:
-		log.Println("MessageType=IamCamera")
-		camera, err := NewIamCamera(reader)
+	isWantHeartbeat := false
 
-		if err != nil {
+	for {
+		var messageType uint8
+
+		if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
 			return err
 		}
 
-		log.Printf("%+v\n", camera)
+		switch messageType {
+		case 0x80:
+			log.Println("MessageType=IamCamera")
+			camera, err := NewIamCamera(reader)
 
-		if err := camera.Register(ctx, queries); err != nil {
-			return err
-		}
-
-		isWantHeartbeat := false
-
-		for {
-			var messageType uint8
-
-			if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
+			if err != nil {
 				return err
 			}
 
-			switch messageType {
-			case 0x40:
-				log.Println("MessageType=WantHeartbeat")
+			log.Printf("%+v\n", camera)
 
-				if isWantHeartbeat {
-					return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
-				}
-
-				isWantHeartbeat = true
-
-				hearbeat, err := NewWantHeartbeat(reader)
-
-				if err != nil {
-					return err
-				}
-
-				go hearbeat.SendHeartBeat(conn)
-
-			case 0x20:
-				log.Println("MessageType=Plate")
-
-				plate, err := NewPlate(reader)
-
-				if err != nil {
-					return err
-				}
-
-				log.Printf("%+v\n", plate)
-
-				observation_id, err := plate.RegisterObservation(ctx, queries, RegisterObservationsParams{
-					RoadID:   camera.road,
-					Location: camera.mile,
-				})
-
-				if err != nil {
-					return err
-				}
-
-				plateObservationChan <- observation_id
-
-			default:
-				return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
-			}
-		}
-
-	case 0x81:
-		log.Println("MessageType=IamDispatcher")
-		dispatcher, err := NewIamDispatcher(reader)
-		dispatcherId := rand.Text()
-
-		if err != nil {
-			return err
-		}
-		log.Printf("%+v\n", dispatcher)
-
-		dispatcherConnMap[dispatcherId] = conn
-		defer func() {
-			delete(dispatcherConnMap, dispatcherId)
-		}()
-		dispatcher.Register(ctx, queries, dispatcherId)
-
-		isWantHeartbeat := false
-
-		for {
-
-			var messageType uint8
-
-			if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
+			if err := camera.Register(ctx, queries); err != nil {
 				return err
 			}
 
-			switch messageType {
+			for {
+				var messageType uint8
 
-			case 0x40:
-				log.Println("MessageType=WantHeartbeat")
-
-				if isWantHeartbeat {
-					return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
-				}
-
-				isWantHeartbeat = true
-
-				hearbeat, err := NewWantHeartbeat(reader)
-
-				if err != nil {
+				if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
 					return err
 				}
 
-				go hearbeat.SendHeartBeat(conn)
+				switch messageType {
+				case 0x40:
+					log.Println("MessageType=WantHeartbeat")
 
-			default:
-				return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
+					if isWantHeartbeat {
+						return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
+					}
+
+					isWantHeartbeat = true
+
+					hearbeat, err := NewWantHeartbeat(reader)
+
+					if err != nil {
+						return err
+					}
+
+					go hearbeat.SendHeartBeat(conn)
+
+				case 0x20:
+					log.Println("MessageType=Plate")
+
+					plate, err := NewPlate(reader)
+
+					if err != nil {
+						return err
+					}
+
+					log.Printf("%+v\n", plate)
+
+					observation_id, err := plate.RegisterObservation(ctx, queries, RegisterObservationsParams{
+						RoadID:   camera.road,
+						Location: camera.mile,
+					})
+
+					if err != nil {
+						return err
+					}
+
+					plateObservationChan <- observation_id
+
+				default:
+					return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
+				}
 			}
-		}
 
-	default:
-		return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
+		case 0x81:
+			log.Println("MessageType=IamDispatcher")
+			dispatcher, err := NewIamDispatcher(reader)
+			dispatcherId := rand.Text()
+
+			if err != nil {
+				return err
+			}
+			log.Printf("%+v\n", dispatcher)
+
+			dispatcherConnMap[dispatcherId] = conn
+			defer func() {
+				delete(dispatcherConnMap, dispatcherId)
+			}()
+			dispatcher.Register(ctx, queries, dispatcherId)
+
+			for {
+
+				var messageType uint8
+
+				if err := binary.Read(reader, binary.BigEndian, &messageType); err != nil {
+					return err
+				}
+
+				switch messageType {
+
+				case 0x40:
+					log.Println("MessageType=WantHeartbeat")
+
+					if isWantHeartbeat {
+						return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
+					}
+
+					isWantHeartbeat = true
+
+					hearbeat, err := NewWantHeartbeat(reader)
+
+					if err != nil {
+						return err
+					}
+
+					go hearbeat.SendHeartBeat(conn)
+
+				default:
+					return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
+				}
+			}
+
+		case 0x40:
+			log.Println("MessageType=WantHeartbeat")
+
+			if isWantHeartbeat {
+				return clientError(conn, fmt.Sprintf("Multiple heartbeats not allowed: %x", messageType))
+			}
+
+			isWantHeartbeat = true
+
+			hearbeat, err := NewWantHeartbeat(reader)
+
+			if err != nil {
+				return err
+			}
+
+			go hearbeat.SendHeartBeat(conn)
+
+		default:
+			return clientError(conn, fmt.Sprintf("unknown messageType: %x", messageType))
+		}
 	}
 }
 
