@@ -27,8 +27,8 @@ const conflictingTickets = `-- name: ConflictingTickets :one
 SELECT id FROM ticket WHERE
     plate_number = ?1 AND
     (
-    day_start_range BETWEEN ?2 AND ?3 OR
-    day_end_rage BETWEEN ?2 AND ?3
+    (?2 >= day_start_range AND ?2 <= day_end_range ) OR
+    (?3  >= day_start_range AND ?3 <= day_end_range)
     ) LIMIT 1
 `
 

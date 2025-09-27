@@ -32,8 +32,8 @@ SELECT * FROM plate_observation WHERE id = @id;
 SELECT id FROM ticket WHERE
     plate_number = @plate_number AND
     (
-    day_start_range BETWEEN @start_date AND @end_date OR
-    day_end_rage BETWEEN @start_date AND @end_date
+    (@start_date >= day_start_range AND @start_date <= day_end_range ) OR
+    (@end_date  >= day_start_range AND @end_date <= day_end_range)
     ) LIMIT 1;
 
 -- name: FindDispatcherForRoad :one

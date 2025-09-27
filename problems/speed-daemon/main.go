@@ -11,7 +11,6 @@ import (
 	"log"
 	"math"
 	"net"
-	"strconv"
 	"time"
 
 	_ "embed"
@@ -36,7 +35,14 @@ func processUnProcessedTicket(queries *db.Queries) {
 		}
 
 		for _, ticket := range tickets {
-			dispatcherConn, ok := dispatcherConnMap[strconv.Itoa(int(ticket.RoadID))]
+			dispatcher, err := queries.FindDispatcherForRoad(ctx, ticket.RoadID)
+
+			if err != nil {
+				log.Printf("Error finding dispatcher for road %v: %v", ticket.RoadID, err)
+				continue
+			}
+
+			dispatcherConn, ok := dispatcherConnMap[dispatcher]
 
 			if !ok {
 				log.Printf("No dispatcher connection found for road %v", ticket.RoadID)
@@ -349,7 +355,7 @@ func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 			if err != nil {
 				return err
 			}
-			log.Printf("%+v\n", dispatcher)
+			log.Printf("Dispatcher %+v\n", dispatcher)
 
 			dispatcherConnMap[dispatcherId] = conn
 			defer func() {
