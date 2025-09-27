@@ -9,6 +9,20 @@ import (
 	"context"
 )
 
+const addDispatcherForRoad = `-- name: AddDispatcherForRoad :exec
+INSERT INTO dispatcher (road_id, dispatcher_id) VALUES (?1, ?2)
+`
+
+type AddDispatcherForRoadParams struct {
+	RoadID       int64
+	DispatcherID string
+}
+
+func (q *Queries) AddDispatcherForRoad(ctx context.Context, arg AddDispatcherForRoadParams) error {
+	_, err := q.db.ExecContext(ctx, addDispatcherForRoad, arg.RoadID, arg.DispatcherID)
+	return err
+}
+
 const conflictingTickets = `-- name: ConflictingTickets :one
 SELECT id FROM ticket WHERE
     plate_number = ?1 AND

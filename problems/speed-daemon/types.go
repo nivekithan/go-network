@@ -267,3 +267,16 @@ func NewIamDispatcher(reader io.Reader) (*IamDispatcher, error) {
 		roads: roads,
 	}, nil
 }
+
+func (d *IamDispatcher) Register(ctx context.Context, queries *db.Queries, dispatcherId string) {
+	for _, road := range d.roads {
+		roadId := int64(road)
+
+		if err := queries.AddDispatcherForRoad(ctx, db.AddDispatcherForRoadParams{
+			RoadID:       roadId,
+			DispatcherID: dispatcherId,
+		}); err != nil {
+			log.Printf("Failed to register dispatcher %s for road %d: %v", dispatcherId, roadId, err)
+		}
+	}
+}

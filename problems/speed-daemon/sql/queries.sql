@@ -53,3 +53,7 @@ SELECT * FROM ticket WHERE is_processed = 0;
 
 -- name: MarkTicketAsProcessed :exec
 UPDATE ticket SET is_processed = 1 WHERE id = @id;
+
+
+-- name: AddDispatcherForRoad :exec
+INSERT INTO dispatcher (road_id, dispatcher_id) VALUES (@road_id, @dispatcher_id);

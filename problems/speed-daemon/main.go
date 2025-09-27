@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/binary"
 	"errors"
@@ -341,12 +342,19 @@ func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 
 	case 0x81:
 		log.Println("MessageType=IamDispatcher")
-		camera, err := NewIamDispatcher(reader)
+		dispatcher, err := NewIamDispatcher(reader)
+		dispatcherId := rand.Text()
 
 		if err != nil {
 			return err
 		}
-		log.Printf("%+v\n", camera)
+		log.Printf("%+v\n", dispatcher)
+
+		dispatcherConnMap[dispatcherId] = conn
+		defer func() {
+			delete(dispatcherConnMap, dispatcherId)
+		}()
+		dispatcher.Register(ctx, queries, dispatcherId)
 
 		isWantHeartbeat := false
 

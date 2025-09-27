@@ -13,7 +13,7 @@ CREATE TABLE road (
 );
 
 CREATE TABLE dispatcher (
-    id INTEGER PRIMARY KEY NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     road_id INTEGER NOT NULL,
     dispatcher_id TEXT NOT NULL
 );
