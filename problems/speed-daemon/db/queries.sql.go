@@ -9,6 +9,39 @@ import (
 	"context"
 )
 
+const conflictingTickets = `-- name: ConflictingTickets :one
+SELECT id FROM ticket WHERE
+    plate_number = ?1 AND
+    (
+    day_start_range BETWEEN ?2 AND ?3 OR
+    day_end_rage BETWEEN ?2 AND ?3
+    ) LIMIT 1
+`
+
+type ConflictingTicketsParams struct {
+	PlateNumber string
+	StartDate   int64
+	EndDate     int64
+}
+
+func (q *Queries) ConflictingTickets(ctx context.Context, arg ConflictingTicketsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, conflictingTickets, arg.PlateNumber, arg.StartDate, arg.EndDate)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const findDispatcherForRoad = `-- name: FindDispatcherForRoad :one
+SELECT dispatcher_id FROM dispatcher WHERE road_id = ?1 LIMIT 1
+`
+
+func (q *Queries) FindDispatcherForRoad(ctx context.Context, roadID int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, findDispatcherForRoad, roadID)
+	var dispatcher_id string
+	err := row.Scan(&dispatcher_id)
+	return dispatcher_id, err
+}
+
 const getNextObservation = `-- name: GetNextObservation :one
 SELECT id, plate_number, timestamp, location, road_id FROM plate_observation WHERE
     plate_number = ?1 AND
@@ -91,6 +124,45 @@ func (q *Queries) GetRoad(ctx context.Context, id int64) (Road, error) {
 	return i, err
 }
 
+const getUnProcessedTickets = `-- name: GetUnProcessedTickets :many
+SELECT id, plate_number, road_id, mile_1, timestamp_1, mile_2, timestamp_2, speed, day_start_range, day_end_range, is_processed FROM ticket WHERE is_processed = 0
+`
+
+func (q *Queries) GetUnProcessedTickets(ctx context.Context) ([]Ticket, error) {
+	rows, err := q.db.QueryContext(ctx, getUnProcessedTickets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Ticket
+	for rows.Next() {
+		var i Ticket
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlateNumber,
+			&i.RoadID,
+			&i.Mile1,
+			&i.Timestamp1,
+			&i.Mile2,
+			&i.Timestamp2,
+			&i.Speed,
+			&i.DayStartRange,
+			&i.DayEndRange,
+			&i.IsProcessed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertPlateObservation = `-- name: InsertPlateObservation :one
 INSERT INTO plate_observation
     (plate_number, road_id, timestamp, location) VALUES
@@ -128,5 +200,51 @@ type InsertRoadParams struct {
 
 func (q *Queries) InsertRoad(ctx context.Context, arg InsertRoadParams) error {
 	_, err := q.db.ExecContext(ctx, insertRoad, arg.ID, arg.SpeedLimit)
+	return err
+}
+
+const markTicketAsProcessed = `-- name: MarkTicketAsProcessed :exec
+UPDATE ticket SET is_processed = 1 WHERE id = ?1
+`
+
+func (q *Queries) MarkTicketAsProcessed(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, markTicketAsProcessed, id)
+	return err
+}
+
+const storeTicket = `-- name: StoreTicket :exec
+INSERT INTO ticket
+    (plate_number, road_id, mile_1, timestamp_1, mile_2, timestamp_2, speed, day_start_range, day_end_range, is_processed)
+VALUES (
+    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+)
+`
+
+type StoreTicketParams struct {
+	PlateNumber   string
+	RoadID        int64
+	Mile1         int64
+	Timestamp1    int64
+	Mile2         int64
+	Timestamp2    int64
+	Speed         int64
+	DayStartRange int64
+	DayEndRange   int64
+	IsProcessed   int64
+}
+
+func (q *Queries) StoreTicket(ctx context.Context, arg StoreTicketParams) error {
+	_, err := q.db.ExecContext(ctx, storeTicket,
+		arg.PlateNumber,
+		arg.RoadID,
+		arg.Mile1,
+		arg.Timestamp1,
+		arg.Mile2,
+		arg.Timestamp2,
+		arg.Speed,
+		arg.DayStartRange,
+		arg.DayEndRange,
+		arg.IsProcessed,
+	)
 	return err
 }

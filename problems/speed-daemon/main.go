@@ -10,6 +10,8 @@ import (
 	"log"
 	"math"
 	"net"
+	"strconv"
+	"time"
 
 	_ "embed"
 
@@ -18,6 +20,160 @@ import (
 )
 
 var plateObservationChan chan int64
+var dispatcherConnMap map[string]net.Conn
+
+func processUnProcessedTicket(queries *db.Queries) {
+	ctx := context.Background()
+	ticker := time.NewTicker(1 * time.Second)
+
+	for _ = range ticker.C {
+
+		tickets, err := queries.GetUnProcessedTickets(ctx)
+		if err != nil {
+			log.Printf("Error getting unprocessed tickets: %v", err)
+			return
+		}
+
+		for _, ticket := range tickets {
+			dispatcherConn, ok := dispatcherConnMap[strconv.Itoa(int(ticket.RoadID))]
+
+			if !ok {
+				log.Printf("No dispatcher connection found for road %v", ticket.RoadID)
+				continue
+			}
+
+			ticketBinary := Ticket{
+				plate:      ticket.PlateNumber,
+				road:       uint16(ticket.RoadID),
+				mile1:      uint16(ticket.Mile1),
+				timestamp1: uint32(ticket.Timestamp1),
+				timestamp2: uint32(ticket.Timestamp2),
+				mile2:      uint16(ticket.Mile2),
+				speed:      uint16(ticket.Speed),
+			}
+
+			dispatcherConn.Write(ticketBinary.toBinary())
+
+			queries.MarkTicketAsProcessed(ctx, ticket.ID)
+
+		}
+	}
+}
+
+type TicketObservation struct {
+	timestamp int64
+	location  int64
+}
+
+type CreateNewTicketParams struct {
+	plate        string
+	roadId       int64
+	observation1 TicketObservation
+	observation2 TicketObservation
+	speed        int64
+}
+
+func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateNewTicketParams) {
+	var ticket Ticket
+
+	if newTicket.observation1.timestamp > newTicket.observation2.timestamp {
+		ticket = Ticket{
+			plate:      newTicket.plate,
+			road:       uint16(newTicket.roadId),
+			mile1:      uint16(newTicket.observation2.location),
+			mile2:      uint16(newTicket.observation1.location),
+			timestamp1: uint32(newTicket.observation2.timestamp),
+			timestamp2: uint32(newTicket.observation1.timestamp),
+			speed:      uint16(newTicket.speed * 100),
+		}
+	} else {
+		ticket = Ticket{
+			plate:      newTicket.plate,
+			road:       uint16(newTicket.roadId),
+			mile1:      uint16(newTicket.observation1.location),
+			mile2:      uint16(newTicket.observation2.location),
+			timestamp1: uint32(newTicket.observation1.timestamp),
+			timestamp2: uint32(newTicket.observation2.timestamp),
+			speed:      uint16(newTicket.speed * 100),
+		}
+	}
+
+	minDay := math.Trunc(float64(ticket.timestamp1 / 86400))
+	maxDay := math.Trunc(float64(ticket.timestamp2 / 86400))
+
+	if _, err := queries.ConflictingTickets(ctx, db.ConflictingTicketsParams{
+		PlateNumber: ticket.plate,
+		StartDate:   int64(minDay),
+		EndDate:     int64(maxDay),
+	}); err == nil {
+		log.Println("Found conflicting tickets")
+		return
+	}
+
+	log.Println("Did not find conflicting tickets. Ticketing the plate")
+
+	dispatcherId, err := queries.FindDispatcherForRoad(ctx, int64(ticket.road))
+
+	if err != nil {
+		log.Printf("found no dispatcher for road: %v. Storing ticket as not processed", ticket.road)
+
+		if err = queries.StoreTicket(ctx, db.StoreTicketParams{
+			PlateNumber:   ticket.plate,
+			RoadID:        int64(ticket.road),
+			Mile1:         int64(ticket.mile1),
+			Mile2:         int64(ticket.mile2),
+			Timestamp1:    int64(ticket.timestamp1),
+			Timestamp2:    int64(ticket.timestamp2),
+			Speed:         int64(ticket.speed),
+			DayStartRange: int64(minDay),
+			DayEndRange:   int64(maxDay),
+			IsProcessed:   0,
+		}); err != nil {
+			panic(err)
+		}
+
+		return
+	}
+
+	conn, ok := dispatcherConnMap[dispatcherId]
+
+	if !ok {
+		log.Printf("Found no dispatcher for road: %v, Storing ticket as not processed", ticket.road)
+		if err = queries.StoreTicket(ctx, db.StoreTicketParams{
+			PlateNumber:   ticket.plate,
+			RoadID:        int64(ticket.road),
+			Mile1:         int64(ticket.mile1),
+			Mile2:         int64(ticket.mile2),
+			Timestamp1:    int64(ticket.timestamp1),
+			Timestamp2:    int64(ticket.timestamp2),
+			Speed:         int64(ticket.speed),
+			DayStartRange: int64(minDay),
+			DayEndRange:   int64(maxDay),
+			IsProcessed:   0,
+		}); err != nil {
+			panic(err)
+		}
+
+		return
+	}
+
+	conn.Write(ticket.toBinary())
+
+	if err = queries.StoreTicket(ctx, db.StoreTicketParams{
+		PlateNumber:   ticket.plate,
+		RoadID:        int64(ticket.road),
+		Mile1:         int64(ticket.mile1),
+		Mile2:         int64(ticket.mile2),
+		Timestamp1:    int64(ticket.timestamp1),
+		Timestamp2:    int64(ticket.timestamp2),
+		Speed:         int64(ticket.speed),
+		DayStartRange: int64(minDay),
+		DayEndRange:   int64(maxDay),
+		IsProcessed:   1,
+	}); err != nil {
+		panic(err)
+	}
+}
 
 // Blocks the current goroutine
 func processPlateObservation(queries *db.Queries) {
@@ -49,8 +205,8 @@ func processPlateObservation(queries *db.Queries) {
 		})
 
 		if err == nil {
-			distance := float64(observation.Location - previousObservation.Location)
-			time := float64(observation.Timestamp-previousObservation.Timestamp) / (60 * 60)
+			distance := math.Abs(float64(observation.Location - previousObservation.Location))
+			time := math.Abs(float64(observation.Timestamp-previousObservation.Timestamp) / (60 * 60))
 
 			previousSpeedLimitFloat := (distance) / time
 			previousSpeedLimit := int64(math.Round(previousSpeedLimitFloat))
@@ -59,8 +215,16 @@ func processPlateObservation(queries *db.Queries) {
 
 			if previousSpeedLimit > accepetedSpeedLimit {
 				log.Printf("Speed limit exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
+				createNewTicket(ctx, queries, CreateNewTicketParams{
+					plate:        observation.PlateNumber,
+					roadId:       road.ID,
+					observation1: TicketObservation{timestamp: observation.Timestamp, location: observation.Location},
+					observation2: TicketObservation{timestamp: previousObservation.Timestamp, location: previousObservation.Location},
+					speed:        previousSpeedLimit,
+				})
 				continue
 			}
+
 		}
 
 		nextObservation, err := queries.GetNextObservation(ctx, db.GetNextObservationParams{
@@ -70,8 +234,8 @@ func processPlateObservation(queries *db.Queries) {
 		})
 
 		if err == nil {
-			distance := float64(observation.Location - nextObservation.Location)
-			time := float64(observation.Timestamp-nextObservation.Timestamp) / (60 * 60)
+			distance := math.Abs(float64(observation.Location - nextObservation.Location))
+			time := math.Abs(float64(observation.Timestamp-nextObservation.Timestamp) / (60 * 60))
 
 			nextSpeedLimitFloat := (distance) / time
 			nextSpeedLimit := int64(math.Round(nextSpeedLimitFloat))
@@ -79,6 +243,13 @@ func processPlateObservation(queries *db.Queries) {
 			log.Printf("Speed limit %v", nextSpeedLimit)
 			if nextSpeedLimit > accepetedSpeedLimit {
 				log.Printf("Speed limit exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
+				createNewTicket(ctx, queries, CreateNewTicketParams{
+					plate:        observation.PlateNumber,
+					roadId:       road.ID,
+					observation1: TicketObservation{timestamp: observation.Timestamp, location: observation.Location},
+					observation2: TicketObservation{timestamp: nextObservation.Timestamp, location: nextObservation.Location},
+					speed:        nextSpeedLimit,
+				})
 				continue
 			}
 		}
@@ -259,8 +430,10 @@ func run() error {
 	queries := db.New(sqliteDb)
 
 	plateObservationChan = make(chan int64)
+	dispatcherConnMap = make(map[string]net.Conn)
 
 	go processPlateObservation(queries)
+	go processUnProcessedTicket(queries)
 
 	listner, err := net.Listen("tcp", ":8000")
 

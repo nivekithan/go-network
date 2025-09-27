@@ -4,6 +4,12 @@
 
 package db
 
+type Dispatcher struct {
+	ID           int64
+	RoadID       int64
+	DispatcherID string
+}
+
 type PlateObservation struct {
 	ID          int64
 	PlateNumber string
@@ -15,4 +21,18 @@ type PlateObservation struct {
 type Road struct {
 	ID         int64
 	SpeedLimit int64
+}
+
+type Ticket struct {
+	ID            int64
+	PlateNumber   string
+	RoadID        int64
+	Mile1         int64
+	Timestamp1    int64
+	Mile2         int64
+	Timestamp2    int64
+	Speed         int64
+	DayStartRange int64
+	DayEndRange   int64
+	IsProcessed   int64
 }

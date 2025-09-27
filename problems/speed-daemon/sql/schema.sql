@@ -12,6 +12,12 @@ CREATE TABLE road (
     speed_limit INTEGER NOT NULL
 );
 
+CREATE TABLE dispatcher (
+    id INTEGER PRIMARY KEY NOT NULL,
+    road_id INTEGER NOT NULL,
+    dispatcher_id TEXT NOT NULL
+);
+
 
 CREATE TABLE ticket (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

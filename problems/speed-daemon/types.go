@@ -93,6 +93,49 @@ type Ticket struct {
 	speed uint16
 }
 
+func (t *Ticket) toBinary() []byte {
+	output := []byte{0x21, byte(len(t.plate))}
+
+	output = append(output, []byte(t.plate)...)
+	output, err := binary.Append(output, binary.BigEndian, t.road)
+
+	if err != nil {
+		panic(err)
+	}
+
+	output, err = binary.Append(output, binary.BigEndian, t.mile1)
+
+	if err != nil {
+		panic(err)
+	}
+
+	output, err = binary.Append(output, binary.BigEndian, t.timestamp1)
+
+	if err != nil {
+		panic(err)
+	}
+
+	output, err = binary.Append(output, binary.BigEndian, t.mile2)
+
+	if err != nil {
+		panic(err)
+	}
+
+	output, err = binary.Append(output, binary.BigEndian, t.timestamp2)
+
+	if err != nil {
+		panic(err)
+	}
+
+	output, err = binary.Append(output, binary.BigEndian, t.speed)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return output
+}
+
 type WantHeartbeat struct {
 	// Interval is represented in deciseconds
 	// 25 deciseconds = 2.5 seconds
