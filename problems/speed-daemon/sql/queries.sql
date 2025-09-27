@@ -29,7 +29,7 @@ SELECT * FROM plate_observation WHERE id = @id;
 
 
 -- name: ConflictingTickets :one
-SELECT id FROM ticket WHERE
+SELECT * FROM ticket WHERE
     plate_number = @plate_number AND
     (
     (@start_date >= day_start_range AND @start_date <= day_end_range ) OR

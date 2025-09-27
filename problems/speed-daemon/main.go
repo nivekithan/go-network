@@ -11,6 +11,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"sync"
 	"time"
 
 	_ "embed"
@@ -20,7 +21,30 @@ import (
 )
 
 var plateObservationChan chan int64
+
 var dispatcherConnMap map[string]net.Conn
+var dispatcherConnLock sync.Mutex
+
+func addDispatcherConnection(dispatcher string, conn net.Conn) {
+	dispatcherConnLock.Lock()
+	defer dispatcherConnLock.Unlock()
+
+	dispatcherConnMap[dispatcher] = conn
+}
+
+func getDispatcherConnection(dispatcher string) (net.Conn, bool) {
+	dispatcherConnLock.Lock()
+	defer dispatcherConnLock.Unlock()
+	conn, ok := dispatcherConnMap[dispatcher]
+	return conn, ok
+}
+
+func removeDispatcherConnection(dispatcher string) {
+	dispatcherConnLock.Lock()
+	defer dispatcherConnLock.Unlock()
+
+	delete(dispatcherConnMap, dispatcher)
+}
 
 func processUnProcessedTicket(queries *db.Queries) {
 	ctx := context.Background()
@@ -42,7 +66,7 @@ func processUnProcessedTicket(queries *db.Queries) {
 				continue
 			}
 
-			dispatcherConn, ok := dispatcherConnMap[dispatcher]
+			dispatcherConn, ok := getDispatcherConnection(dispatcher)
 
 			if !ok {
 				log.Printf("No dispatcher connection found for road %v", ticket.RoadID)
@@ -80,7 +104,7 @@ type CreateNewTicketParams struct {
 	speed        int64
 }
 
-func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateNewTicketParams) {
+func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateNewTicketParams) error {
 	var ticket Ticket
 
 	if newTicket.observation1.timestamp > newTicket.observation2.timestamp {
@@ -108,13 +132,16 @@ func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateN
 	minDay := math.Trunc(float64(ticket.timestamp1 / 86400))
 	maxDay := math.Trunc(float64(ticket.timestamp2 / 86400))
 
-	if _, err := queries.ConflictingTickets(ctx, db.ConflictingTicketsParams{
+	conflitcingTickets, err := queries.ConflictingTickets(ctx, db.ConflictingTicketsParams{
 		PlateNumber: ticket.plate,
 		StartDate:   int64(minDay),
 		EndDate:     int64(maxDay),
-	}); err == nil {
-		log.Println("Found conflicting tickets")
-		return
+	})
+
+	if err == nil {
+
+		log.Printf("Found conflicting tickets  Ticket: %+v Conflicts: %+v \n", ticket, conflitcingTickets)
+		return errors.New("conflict tickets")
 	}
 
 	log.Println("Did not find conflicting tickets. Ticketing the plate")
@@ -122,7 +149,7 @@ func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateN
 	dispatcherId, err := queries.FindDispatcherForRoad(ctx, int64(ticket.road))
 
 	if err != nil {
-		log.Printf("found no dispatcher for road: %v. Storing ticket as not processed", ticket.road)
+		log.Printf("found no dispatcher for road: %v. Storing ticket as not processed. Ticket: %+v", ticket.road, ticket)
 
 		if err = queries.StoreTicket(ctx, db.StoreTicketParams{
 			PlateNumber:   ticket.plate,
@@ -139,13 +166,13 @@ func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateN
 			panic(err)
 		}
 
-		return
+		return nil
 	}
 
-	conn, ok := dispatcherConnMap[dispatcherId]
+	conn, ok := getDispatcherConnection(dispatcherId)
 
 	if !ok {
-		log.Printf("Found no dispatcher for road: %v, Storing ticket as not processed", ticket.road)
+		log.Printf("Found no dispatcher for road: %v, Storing ticket as not processed. Ticket: %+v", ticket.road, ticket)
 		if err = queries.StoreTicket(ctx, db.StoreTicketParams{
 			PlateNumber:   ticket.plate,
 			RoadID:        int64(ticket.road),
@@ -161,10 +188,13 @@ func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateN
 			panic(err)
 		}
 
-		return
+		return nil
 	}
 
-	conn.Write(ticket.toBinary())
+	if _, err = conn.Write(ticket.toBinary()); err != nil {
+		log.Printf("Error writing ticket to dispatcher: %v. Ticket %+v", err, ticket)
+		return nil
+	}
 
 	if err = queries.StoreTicket(ctx, db.StoreTicketParams{
 		PlateNumber:   ticket.plate,
@@ -180,6 +210,10 @@ func createNewTicket(ctx context.Context, queries *db.Queries, newTicket CreateN
 	}); err != nil {
 		panic(err)
 	}
+
+	log.Printf("Ticket processed successfully %+v", ticket)
+
+	return nil
 }
 
 // Blocks the current goroutine
@@ -222,14 +256,16 @@ func processPlateObservation(queries *db.Queries) {
 
 			if previousSpeedLimit > accepetedSpeedLimit {
 				log.Printf("Speed limit exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
-				createNewTicket(ctx, queries, CreateNewTicketParams{
+				if err = createNewTicket(ctx, queries, CreateNewTicketParams{
 					plate:        observation.PlateNumber,
 					roadId:       road.ID,
 					observation1: TicketObservation{timestamp: observation.Timestamp, location: observation.Location},
 					observation2: TicketObservation{timestamp: previousObservation.Timestamp, location: previousObservation.Location},
 					speed:        previousSpeedLimit,
-				})
-				continue
+				}); err == nil {
+
+					continue
+				}
 			}
 
 		}
@@ -250,14 +286,16 @@ func processPlateObservation(queries *db.Queries) {
 			log.Printf("Speed limit %v", nextSpeedLimit)
 			if nextSpeedLimit > accepetedSpeedLimit {
 				log.Printf("Speed limit exceeded for plate %v on road %v\n", observation.PlateNumber, road.ID)
-				createNewTicket(ctx, queries, CreateNewTicketParams{
+				if err = createNewTicket(ctx, queries, CreateNewTicketParams{
 					plate:        observation.PlateNumber,
 					roadId:       road.ID,
 					observation1: TicketObservation{timestamp: observation.Timestamp, location: observation.Location},
 					observation2: TicketObservation{timestamp: nextObservation.Timestamp, location: nextObservation.Location},
 					speed:        nextSpeedLimit,
-				})
-				continue
+				}); err == nil {
+
+					continue
+				}
 			}
 		}
 
@@ -357,9 +395,9 @@ func handleConnectionImpl(queries *db.Queries, conn net.Conn) error {
 			}
 			log.Printf("Dispatcher %+v\n", dispatcher)
 
-			dispatcherConnMap[dispatcherId] = conn
+			addDispatcherConnection(dispatcherId, conn)
 			defer func() {
-				delete(dispatcherConnMap, dispatcherId)
+				removeDispatcherConnection(dispatcherId)
 			}()
 			dispatcher.Register(ctx, queries, dispatcherId)
 

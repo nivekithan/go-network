@@ -24,7 +24,7 @@ func (q *Queries) AddDispatcherForRoad(ctx context.Context, arg AddDispatcherFor
 }
 
 const conflictingTickets = `-- name: ConflictingTickets :one
-SELECT id FROM ticket WHERE
+SELECT id, plate_number, road_id, mile_1, timestamp_1, mile_2, timestamp_2, speed, day_start_range, day_end_range, is_processed FROM ticket WHERE
     plate_number = ?1 AND
     (
     (?2 >= day_start_range AND ?2 <= day_end_range ) OR
@@ -38,11 +38,23 @@ type ConflictingTicketsParams struct {
 	EndDate     int64
 }
 
-func (q *Queries) ConflictingTickets(ctx context.Context, arg ConflictingTicketsParams) (int64, error) {
+func (q *Queries) ConflictingTickets(ctx context.Context, arg ConflictingTicketsParams) (Ticket, error) {
 	row := q.db.QueryRowContext(ctx, conflictingTickets, arg.PlateNumber, arg.StartDate, arg.EndDate)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.PlateNumber,
+		&i.RoadID,
+		&i.Mile1,
+		&i.Timestamp1,
+		&i.Mile2,
+		&i.Timestamp2,
+		&i.Speed,
+		&i.DayStartRange,
+		&i.DayEndRange,
+		&i.IsProcessed,
+	)
+	return i, err
 }
 
 const findDispatcherForRoad = `-- name: FindDispatcherForRoad :one
