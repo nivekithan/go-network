@@ -1,5 +1,6 @@
 {
   "scripts": {
-    "dev": "go run problems/speed-daemon/*.go"
+    "dev": "go run problems/line-reversal/*.go",
+    "lrcp:client": "go run ./tools/lrcp-client/*.go localhost:8000"
   }
 }

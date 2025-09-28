@@ -1,0 +1,52 @@
+# LRCP REPL Client
+
+A command-line REPL (Read-Eval-Print Loop) client for testing the Line Reversal Control Protocol (LRCP) server.
+
+## Usage
+
+```bash
+cd tools/lrcp-client
+go run main.go <server_address:port>
+```
+
+Example:
+```bash
+cd tools/lrcp-client
+go run main.go localhost:8000
+```
+
+## Commands
+
+- `connect <session_token>` - Connect to server with session token
+- `data <text>` - Send data to server (will be reversed by the server)
+- `close` - Close current session
+- `help` - Show available commands
+- `quit` or `exit` - Exit the REPL
+
+## Example Session
+
+```
+lrcp> connect 12345
+Sending: /connect/12345/
+Received: /ack/12345/0/
+Successfully connected to session 12345
+
+lrcp> data hello world!
+Sending: /data/12345/0/hello world!/
+Received: /ack/12345/12/
+Data sent successfully
+
+lrcp> close
+Sending: /close/12345/
+Received: /close/12345/
+Session closed successfully
+```
+
+## Features
+
+- Automatic message formatting with proper LRCP protocol structure
+- Session management (connect, data transfer, close)
+- Timeout handling for reliable communication
+- Command history and help system
+- Error handling and validation
+- Special character escaping for LRCP protocol compliance
