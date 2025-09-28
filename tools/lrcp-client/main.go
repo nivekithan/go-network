@@ -194,16 +194,16 @@ func escapeData(data string) string {
 
 func printHelp() {
 	fmt.Println("LRCP REPL Client Commands:")
-	fmt.Println("  connect <session_token> - Connect to server with session token")
-	fmt.Println("  data <text>            - Send data to server")
-	fmt.Println("  close                  - Close current session")
-	fmt.Println("  help                   - Show this help message")
-	fmt.Println("  quit                   - Exit the REPL")
+	fmt.Println("  connect <session_token>     - Send connect message")
+	fmt.Println("  data <session_token> <text> - Send data message")
+	fmt.Println("  close <session_token>       - Send close message")
+	fmt.Println("  help                        - Show this help message")
+	fmt.Println("  quit                        - Exit the REPL")
 	fmt.Println()
 	fmt.Println("Example usage:")
 	fmt.Println("  connect 12345")
-	fmt.Println("  data hello world!")
-	fmt.Println("  close")
+	fmt.Println("  data 12345 hello world!")
+	fmt.Println("  close 12345")
 }
 
 func main() {
@@ -270,40 +270,76 @@ func main() {
 				continue
 			}
 
-			if err := client.Connect(sessionToken); err != nil {
-				fmt.Printf("Connection failed: %v\n", err)
+			msg := fmt.Sprintf("/%s/%d/", Connect, sessionToken)
+			if err := client.sendMessage(msg); err != nil {
+				fmt.Printf("Failed to send connect message: %v\n", err)
 			} else {
-				fmt.Printf("Successfully connected to session %d\n", sessionToken)
+				fmt.Printf("Sent: %s\n", msg)
+
+				// Listen for response
+				response, err := client.receiveMessage(3 * time.Second)
+				if err != nil {
+					fmt.Printf("No response received: %v\n", err)
+				} else {
+					fmt.Printf("Received: %s\n", response)
+				}
 			}
 
 		case "data":
-			if !client.isConnected {
-				fmt.Println("Error: Not connected to any session. Use 'connect' first.")
+			if len(parts) < 3 {
+				fmt.Println("Usage: data <session_token> <text>")
 				continue
 			}
 
-			if len(parts) < 2 {
-				fmt.Println("Usage: data <text>")
+			sessionToken, err := strconv.Atoi(parts[1])
+			if err != nil {
+				fmt.Printf("Invalid session token: %s\n", parts[1])
 				continue
 			}
 
-			data := strings.Join(parts[1:], " ")
-			if err := client.SendData(data); err != nil {
-				fmt.Printf("Failed to send data: %v\n", err)
+			data := strings.Join(parts[2:], " ")
+			escapedData := escapeData(data)
+			msg := fmt.Sprintf("/%s/%d/%d/%s/", Data, sessionToken, 0, escapedData)
+
+			if err := client.sendMessage(msg); err != nil {
+				fmt.Printf("Failed to send data message: %v\n", err)
 			} else {
-				fmt.Println("Data sent successfully")
+				fmt.Printf("Sent: %s\n", msg)
+
+				// Listen for response
+				response, err := client.receiveMessage(3 * time.Second)
+				if err != nil {
+					fmt.Printf("No response received: %v\n", err)
+				} else {
+					fmt.Printf("Received: %s\n", response)
+				}
 			}
 
 		case "close":
-			if !client.isConnected {
-				fmt.Println("Error: Not connected to any session.")
+			if len(parts) < 2 {
+				fmt.Println("Usage: close <session_token>")
 				continue
 			}
 
-			if err := client.CloseSession(); err != nil {
-				fmt.Printf("Failed to close session: %v\n", err)
+			sessionToken, err := strconv.Atoi(parts[1])
+			if err != nil {
+				fmt.Printf("Invalid session token: %s\n", parts[1])
+				continue
+			}
+
+			msg := fmt.Sprintf("/%s/%d/", Close, sessionToken)
+			if err := client.sendMessage(msg); err != nil {
+				fmt.Printf("Failed to send close message: %v\n", err)
 			} else {
-				fmt.Println("Session closed successfully")
+				fmt.Printf("Sent: %s\n", msg)
+
+				// Listen for response
+				response, err := client.receiveMessage(3 * time.Second)
+				if err != nil {
+					fmt.Printf("No response received: %v\n", err)
+				} else {
+					fmt.Printf("Received: %s\n", response)
+				}
 			}
 
 		default:

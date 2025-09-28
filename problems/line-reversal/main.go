@@ -79,6 +79,8 @@ func handleSession(packetConn net.PacketConn, sessionChan chan ClientMsg, add ne
 				panic(err)
 			}
 
+			log.Printf("sent connect ack msg %+v", ackMsg)
+
 		}
 
 	}
