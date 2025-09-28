@@ -18,7 +18,7 @@ func run() error {
 
 	log.Println("Listening for udp packages on :8000")
 
-	var sessionTokenToChan map[int]chan ClientMsg
+	var sessionTokenToChan = make(map[int]chan ClientMsg)
 
 	for {
 		var packet [1000]byte
@@ -46,6 +46,7 @@ func run() error {
 			if !ok {
 				sessionChan := make(chan ClientMsg)
 				go handleSession(conn, sessionChan, addr)
+				sessionTokenToChan[msg.SessionToken()] = sessionChan
 				sessionChan <- clientMsg
 				continue
 			}
@@ -69,6 +70,7 @@ func run() error {
 
 // Blocks the routine
 func handleSession(packetConn net.PacketConn, sessionChan chan ClientMsg, add net.Addr) {
+	currentLength := 0
 
 	for clientMsg := range sessionChan {
 		switch msg := clientMsg.(type) {
@@ -81,8 +83,36 @@ func handleSession(packetConn net.PacketConn, sessionChan chan ClientMsg, add ne
 			}
 
 			log.Printf("sent connect ack msg %+v", ackMsg)
+			continue
 
 		case *DataMsg:
+			if currentLength < msg.pos {
+				// We have missed a previous msg
+				ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: currentLength}
+
+				if _, err := packetConn.WriteTo(ackMsg.toByte(), add); err != nil {
+					// TODO: Figure out the correct error handling
+					panic(err)
+				}
+
+				log.Printf("sent data ack msg %+v", ackMsg)
+				continue
+			}
+
+			newData := msg.data[currentLength-msg.pos:]
+
+			log.Printf("got data: %v", newData)
+			currentLength += len(newData)
+
+			ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: currentLength}
+
+			if _, err := packetConn.WriteTo(ackMsg.toByte(), add); err != nil {
+				// TODO: Figure out the correct error handling
+				panic(err)
+			}
+
+			log.Printf("sent data ack msg %+v", ackMsg)
+			continue
 
 		}
 

@@ -195,14 +195,14 @@ func escapeData(data string) string {
 func printHelp() {
 	fmt.Println("LRCP REPL Client Commands:")
 	fmt.Println("  connect <session_token>     - Send connect message")
-	fmt.Println("  data <session_token> <text> - Send data message")
+	fmt.Println("  data <session_token> <pos> <text> - Send data message")
 	fmt.Println("  close <session_token>       - Send close message")
 	fmt.Println("  help                        - Show this help message")
 	fmt.Println("  quit                        - Exit the REPL")
 	fmt.Println()
 	fmt.Println("Example usage:")
 	fmt.Println("  connect 12345")
-	fmt.Println("  data 12345 hello world!")
+	fmt.Println("  data 12345 0 hello world!")
 	fmt.Println("  close 12345")
 }
 
@@ -286,8 +286,8 @@ func main() {
 			}
 
 		case "data":
-			if len(parts) < 3 {
-				fmt.Println("Usage: data <session_token> <text>")
+			if len(parts) < 4 {
+				fmt.Println("Usage: data <session_token> <pos> <text>")
 				continue
 			}
 
@@ -297,9 +297,15 @@ func main() {
 				continue
 			}
 
-			data := strings.Join(parts[2:], " ")
+			pos, err := strconv.Atoi(parts[2])
+			if err != nil {
+				fmt.Printf("Invalid position: %s\n", parts[2])
+				continue
+			}
+
+			data := strings.Join(parts[3:], " ")
 			escapedData := escapeData(data)
-			msg := fmt.Sprintf("/%s/%d/%d/%s/", Data, sessionToken, 0, escapedData)
+			msg := fmt.Sprintf("/%s/%d/%d/%s/", Data, sessionToken, pos, escapedData)
 
 			if err := client.sendMessage(msg); err != nil {
 				fmt.Printf("Failed to send data message: %v\n", err)
