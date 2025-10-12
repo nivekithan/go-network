@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -12,6 +13,7 @@ type LineReversalConnection struct {
 	sessionChan         chan ClientMsg
 	sessionOutgoingAddr net.Addr
 	sessionToken        int
+	isClosed            bool
 	// TODO: Make it a fixed size byte to prevent unbounded memory usage ?
 	bufferData          []byte
 	bufferDataMutex     sync.Mutex
@@ -38,8 +40,13 @@ func (l *LineReversalConnection) Read(b []byte) (int, error) {
 	l.bufferDataMutex.Lock()
 	defer l.bufferDataMutex.Unlock()
 
-	for len(l.bufferData) == 0 {
+	for len(l.bufferData) == 0 && !l.isClosed {
 		l.bufferDataAvaliable.Wait()
+	}
+
+	if len(l.bufferData) == 0 {
+		return 0, io.EOF
+
 	}
 
 	n := copy(b, l.bufferData)
@@ -49,7 +56,12 @@ func (l *LineReversalConnection) Read(b []byte) (int, error) {
 }
 
 func (l *LineReversalConnection) Close() {
+	l.bufferDataMutex.Lock()
+	defer l.bufferDataMutex.Unlock()
+
 	l.lis.closeSession(l.sessionToken)
+	l.isClosed = true
+	l.bufferDataAvaliable.Broadcast()
 }
 
 // blocks the goroutine
