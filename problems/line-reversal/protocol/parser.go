@@ -41,11 +41,13 @@ func ParsePacketData(packetData string) (ClientMsg, error) {
 	sessionTokenBuilder := ""
 	posBuilder := ""
 	dataBuilder := ""
+	lengthBuilder := ""
 
 	var msgType PossibleMsgType
 	var sessionToken *int
 	var pos *int
 	var data *string
+	var length *int
 
 	for i, ch := range packetData {
 		if state == EOF {
@@ -182,9 +184,11 @@ func ParsePacketData(packetData string) (ClientMsg, error) {
 				case '/':
 					dataBuilder += "/"
 					isSkipCharacter = true
+					continue
 				case '\\':
 					dataBuilder += "\\"
 					isSkipCharacter = true
+					continue
 				default:
 					return nil, fmt.Errorf("expected nextChar of \\ to be either / or \\ but instead got %s", string(nextChar))
 				}
@@ -193,6 +197,36 @@ func ParsePacketData(packetData string) (ClientMsg, error) {
 			dataBuilder += string(ch)
 			continue
 
+		}
+
+		if state == ParseLength {
+			if msgType != AckMsgType {
+				panic(fmt.Sprintf("state=%v, this can only happen if msgType=%v . But current msgType is %v", ParseLength, AckMsgType, msgType))
+			}
+
+			if ch == '/' {
+				if len(lengthBuilder) == 0 {
+					return nil, fmt.Errorf("invalid packet data. length is empty")
+				}
+
+				maybeValidLength, err := strconv.Atoi(lengthBuilder)
+
+				if err != nil {
+					return nil, fmt.Errorf("invalid packet data, unable to convert the length:%v to int. Got error %v", lengthBuilder, err)
+				}
+
+				if maybeValidLength < 0 {
+					return nil, fmt.Errorf("invalid packet data, length=%v is less than 0", maybeValidLength)
+				}
+
+				length = &maybeValidLength
+
+				state = EOF
+				continue
+			}
+
+			lengthBuilder += string(ch)
+			continue
 		}
 
 		panic("TODO")
@@ -232,6 +266,18 @@ func ParsePacketData(packetData string) (ClientMsg, error) {
 		}
 
 		return &CloseMsg{sessionToken: *sessionToken}, nil
+	}
+
+	if msgType == AckMsgType {
+		if sessionToken == nil {
+			return nil, fmt.Errorf("msgType = %v. But sessionToken is nil", msgType)
+		}
+
+		if length == nil {
+			return nil, fmt.Errorf("msgType = %v. But length is nil", msgType)
+		}
+
+		return &AckMsg{sessionToken: *sessionToken, length: *length}, nil
 	}
 
 	panic("TODO")

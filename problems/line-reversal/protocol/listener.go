@@ -118,9 +118,6 @@ func (l *LineReversalListener) handlePacketConnection(conn net.PacketConn) {
 // Blocks the current goroutine
 // Call handlePacketConnect
 func (l *LineReversalListener) handlePacketConnectionImpl(conn net.PacketConn) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	var packet [1000]byte
 
 	n, outgoingAddr, err := conn.ReadFrom(packet[:])
@@ -138,6 +135,9 @@ func (l *LineReversalListener) handlePacketConnectionImpl(conn net.PacketConn) e
 		log.Printf("got invalid packet data: %v. Ignoring this packet\n", err)
 		return nil
 	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	switch msg := (clientMsg).(type) {
 	case *ConnectMsg:

@@ -44,6 +44,14 @@ func handleConnection(conn *protocol.LineReversalConnection) {
 		reversedNewLine := reverse(newLine)
 
 		log.Printf("Reversed line: %s", reversedNewLine)
+
+		output := []byte(reversedNewLine)
+
+		output = append(output, '\n')
+
+		conn.Write([]byte(output))
+
+		log.Printf("Wrote line :%s\n", reversedNewLine)
 	}
 
 }
