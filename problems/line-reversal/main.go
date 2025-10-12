@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"log"
 
 	"github.com/nivekithan/go-network/problems/line-reversal/protocol"
@@ -28,20 +29,38 @@ func run() error {
 }
 
 func handleConnection(conn *protocol.LineReversalConnection) {
+	reader := bufio.NewReader(conn)
 	for {
-		var newData [1000]byte
+		newLine, err := reader.ReadString('\n')
 
-		n, err := conn.Read(newData[:])
-
-		data := newData[:n]
 		if err != nil {
-			log.Println(err)
-			continue
+			log.Printf("Got error %v", err)
 		}
 
-		log.Printf("Got data: %s\n", data)
+		newLine = removeLastChar(newLine)
+
+		log.Println(newLine)
+
+		reversedNewLine := reverse(newLine)
+
+		log.Printf("Reversed line: %s", reversedNewLine)
 	}
 
+}
+
+func reverse(s string) string {
+	runes := []rune(s)
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+	return string(runes)
+}
+
+func removeLastChar(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return s[:len(s)-1]
 }
 
 func main() {

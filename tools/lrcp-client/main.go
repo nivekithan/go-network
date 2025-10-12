@@ -124,7 +124,7 @@ func (c *LRCPClient) SendData(data string) error {
 
 	// Escape special characters
 	escapedData := escapeData(data)
-	msg := fmt.Sprintf("/%s/%d/%d/%s/", Data, c.sessionToken, c.sentPos, escapedData)
+	msg := fmt.Sprintf("/%s/%d/%d/%s\n/", Data, c.sessionToken, c.sentPos, escapedData)
 
 	fmt.Printf("Sending: %s\n", msg)
 
@@ -305,7 +305,7 @@ func main() {
 
 			data := strings.Join(parts[3:], " ")
 			escapedData := escapeData(data)
-			msg := fmt.Sprintf("/%s/%d/%d/%s/", Data, sessionToken, pos, escapedData)
+			msg := fmt.Sprintf("/%s/%d/%d/%s\n/", Data, sessionToken, pos, escapedData)
 
 			if err := client.sendMessage(msg); err != nil {
 				fmt.Printf("Failed to send data message: %v\n", err)

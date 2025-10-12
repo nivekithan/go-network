@@ -73,7 +73,6 @@ func (conn *LineReversalConnection) handleClientMessage() {
 
 			newData := msg.data[currentLength-msg.pos:]
 
-			log.Printf("got data: %v", newData)
 			currentLength += len(newData)
 
 			ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: currentLength}
