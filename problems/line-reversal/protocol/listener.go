@@ -10,13 +10,15 @@ import (
 type NewConnctionMsg struct {
 	clientMsgChan chan ClientMsg
 	outgoingAddr  net.Addr
+	sessionToken  int
 }
 
 type LineReversalListener struct {
-	conn               net.PacketConn
+	conn net.PacketConn
+	mu   sync.Mutex
+
 	sessionTokenToChan map[int]chan ClientMsg
 
-	closeMutex  sync.Mutex
 	newConnChan chan NewConnctionMsg
 	isClosed    bool
 	closeChan   chan struct{}
@@ -68,8 +70,8 @@ func (l *LineReversalListener) writeToRemote(data []byte, addr net.Addr) {
 }
 
 func (l *LineReversalListener) Close() error {
-	l.closeMutex.Lock()
-	defer l.closeMutex.Unlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	if l.isClosed {
 		return nil
@@ -82,64 +84,85 @@ func (l *LineReversalListener) Close() error {
 	return l.conn.Close()
 }
 
+func (l *LineReversalListener) closeSession(token int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	sessionTokenChan, ok := l.sessionTokenToChan[token]
+
+	if !ok {
+		return
+	}
+
+	close(sessionTokenChan)
+	delete(l.sessionTokenToChan, token)
+
+}
+
 func (l *LineReversalListener) Addr() net.Addr {
 	return l.conn.LocalAddr()
 }
 
 // Blocks the current goroutine
 func (l *LineReversalListener) handlePacketConnection(conn net.PacketConn) {
-	l.handlePacketConnectionImpl(conn)
+	for {
+		if err := l.handlePacketConnectionImpl(conn); err != nil {
+			break
+		}
+
+	}
 
 	l.Close()
-
 }
 
 // Blocks the current goroutine
 // Call handlePacketConnect
 func (l *LineReversalListener) handlePacketConnectionImpl(conn net.PacketConn) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-	for {
-		var packet [1000]byte
+	var packet [1000]byte
 
-		n, outgoingAddr, err := conn.ReadFrom(packet[:])
+	n, outgoingAddr, err := conn.ReadFrom(packet[:])
 
-		if err != nil {
-			log.Println(err)
-			return errors.New("Unable to read from udp packetConn")
-		}
-
-		log.Printf("Got new packet of size: %d", n)
-
-		clientMsg, err := ParsePacketData(string(packet[:n]))
-
-		if err != nil {
-			log.Printf("got invalid packet data: %v. Ignoring this packet\n", err)
-			continue
-		}
-
-		switch msg := (clientMsg).(type) {
-		case *ConnectMsg:
-			sessionChan, ok := l.sessionTokenToChan[msg.SessionToken()]
-
-			if !ok {
-				sessionChan := make(chan ClientMsg)
-				l.sessionTokenToChan[msg.SessionToken()] = sessionChan
-				l.newConnChan <- NewConnctionMsg{clientMsgChan: sessionChan, outgoingAddr: outgoingAddr}
-				sessionChan <- clientMsg
-				continue
-			}
-
-			sessionChan <- clientMsg
-		default:
-			sessionChan, ok := l.sessionTokenToChan[msg.SessionToken()]
-
-			if !ok {
-				// TODO: Send closeSession msg instead
-				log.Printf("got msgType: %v, but there is no session for :%v. Therefore ignoring the packet\n", msg.Type(), msg.SessionToken())
-				continue
-			}
-
-			sessionChan <- clientMsg
-		}
+	if err != nil {
+		log.Println(err)
+		return errors.New("Unable to read from udp packetConn")
 	}
+
+	log.Printf("Got new packet of size: %d", n)
+
+	clientMsg, err := ParsePacketData(string(packet[:n]))
+
+	if err != nil {
+		log.Printf("got invalid packet data: %v. Ignoring this packet\n", err)
+		return nil
+	}
+
+	switch msg := (clientMsg).(type) {
+	case *ConnectMsg:
+		sessionChan, ok := l.sessionTokenToChan[msg.SessionToken()]
+
+		if !ok {
+			sessionChan := make(chan ClientMsg)
+			l.sessionTokenToChan[msg.SessionToken()] = sessionChan
+			l.newConnChan <- NewConnctionMsg{clientMsgChan: sessionChan, outgoingAddr: outgoingAddr, sessionToken: msg.SessionToken()}
+			sessionChan <- clientMsg
+			return nil
+		}
+
+		sessionChan <- clientMsg
+	default:
+		sessionChan, ok := l.sessionTokenToChan[msg.SessionToken()]
+
+		if !ok {
+			closeMsg := CloseMsg{sessionToken: msg.SessionToken()}
+			l.writeToRemote(closeMsg.toByte(), outgoingAddr)
+			return nil
+		}
+
+		sessionChan <- clientMsg
+	}
+
+	return nil
 }

@@ -226,6 +226,14 @@ func ParsePacketData(packetData string) (ClientMsg, error) {
 		return &DataMsg{sessionToken: *sessionToken, pos: *pos, data: *data}, nil
 	}
 
+	if msgType == CloseMsgType {
+		if sessionToken == nil {
+			return nil, fmt.Errorf("msgType = %v. But sessionToken is nil", msgType)
+		}
+
+		return &CloseMsg{sessionToken: *sessionToken}, nil
+	}
+
 	panic("TODO")
 }
 
@@ -260,7 +268,7 @@ func (a *AckMsg) Type() PossibleMsgType {
 }
 
 func (a *AckMsg) toByte() []byte {
-	stringFmt := fmt.Sprintf("/ack/%d/%d", a.sessionToken, a.length)
+	stringFmt := fmt.Sprintf("/ack/%d/%d/", a.sessionToken, a.length)
 
 	return []byte(stringFmt)
 }
@@ -280,7 +288,25 @@ func (d *DataMsg) Type() PossibleMsgType {
 }
 
 func (d *DataMsg) toByte() []byte {
-	stringFmt := fmt.Sprintf("/data/%d/%d/%s", d.sessionToken, d.pos, d.data)
+	stringFmt := fmt.Sprintf("/data/%d/%d/%s/", d.sessionToken, d.pos, d.data)
+
+	return []byte(stringFmt)
+}
+
+type CloseMsg struct {
+	sessionToken int
+}
+
+func (c *CloseMsg) SessionToken() int {
+	return c.sessionToken
+}
+
+func (c *CloseMsg) Type() PossibleMsgType {
+	return CloseMsgType
+}
+
+func (c *CloseMsg) toByte() []byte {
+	stringFmt := fmt.Sprintf("/close/%d/", c.sessionToken)
 
 	return []byte(stringFmt)
 }

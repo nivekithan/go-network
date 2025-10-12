@@ -10,6 +10,7 @@ type LineReversalConnection struct {
 	lis                 *LineReversalListener
 	sessionChan         chan ClientMsg
 	sessionOutgoingAddr net.Addr
+	sessionToken        int
 	// TODO: Make it a fixed size byte to prevent unbounded memory usage ?
 	bufferData          []byte
 	bufferDataMutex     sync.Mutex
@@ -22,6 +23,7 @@ func (l *LineReversalListener) NewLineReversalConnection(newConnMsg NewConnction
 		sessionChan:         newConnMsg.clientMsgChan,
 		sessionOutgoingAddr: newConnMsg.outgoingAddr,
 		bufferData:          []byte{},
+		sessionToken:        newConnMsg.sessionToken,
 	}
 
 	conn.bufferDataAvaliable = *sync.NewCond(&conn.bufferDataMutex)
@@ -43,6 +45,10 @@ func (l *LineReversalConnection) Read(b []byte) (int, error) {
 	l.bufferData = l.bufferData[n:]
 
 	return n, nil
+}
+
+func (l *LineReversalConnection) Close() {
+	l.lis.closeSession(l.sessionToken)
 }
 
 // blocks the goroutine
@@ -82,6 +88,13 @@ func (conn *LineReversalConnection) handleClientMessage() {
 			log.Printf("sent data ack msg %+v", ackMsg)
 
 			conn.writeToBuffer([]byte(newData))
+			continue
+		case *CloseMsg:
+			closeMsg := CloseMsg{sessionToken: msg.SessionToken()}
+
+			conn.writeToRemote(closeMsg.toByte())
+
+			log.Printf("sent close msg %+v", closeMsg)
 			continue
 		}
 	}
