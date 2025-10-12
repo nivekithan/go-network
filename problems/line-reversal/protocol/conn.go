@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 type LineReversalConnection struct {
@@ -53,51 +54,64 @@ func (l *LineReversalConnection) Close() {
 
 // blocks the goroutine
 func (conn *LineReversalConnection) handleClientMessage() {
-
 	currentLength := 0
+	timer := time.NewTimer(10 * time.Minute)
+	defer timer.Stop()
 
-	for clientMsg := range conn.sessionChan {
-		switch msg := clientMsg.(type) {
-		case *ConnectMsg:
-			ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: 0}
+	for {
+		select {
+		case <-timer.C:
+			log.Printf("Closing session due to timeout sessionToken:%d", conn.sessionToken)
+			conn.Close()
+		case clientMsg, ok := <-conn.sessionChan:
+			if !ok {
+				return
+			}
 
-			conn.writeToRemote(ackMsg.toByte())
+			timer.Reset(10 * time.Minute)
+			switch msg := clientMsg.(type) {
+			case *ConnectMsg:
+				ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: 0}
 
-			log.Printf("sent connect ack msg %+v", ackMsg)
-			continue
+				conn.writeToRemote(ackMsg.toByte())
 
-		case *DataMsg:
-			if currentLength < msg.pos {
-				// We have missed a previous msg
+				log.Printf("sent connect ack msg %+v", ackMsg)
+				continue
+
+			case *DataMsg:
+				if currentLength < msg.pos {
+					// We have missed a previous msg
+					ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: currentLength}
+
+					conn.writeToRemote(ackMsg.toByte())
+
+					log.Printf("sent data ack msg %+v", ackMsg)
+					continue
+				}
+
+				newData := msg.data[currentLength-msg.pos:]
+
+				currentLength += len(newData)
+
 				ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: currentLength}
 
 				conn.writeToRemote(ackMsg.toByte())
 
 				log.Printf("sent data ack msg %+v", ackMsg)
+
+				conn.writeToBuffer([]byte(newData))
+				continue
+			case *CloseMsg:
+				closeMsg := CloseMsg{sessionToken: msg.SessionToken()}
+
+				conn.writeToRemote(closeMsg.toByte())
+
+				log.Printf("sent close msg %+v", closeMsg)
 				continue
 			}
-
-			newData := msg.data[currentLength-msg.pos:]
-
-			currentLength += len(newData)
-
-			ackMsg := AckMsg{sessionToken: msg.SessionToken(), length: currentLength}
-
-			conn.writeToRemote(ackMsg.toByte())
-
-			log.Printf("sent data ack msg %+v", ackMsg)
-
-			conn.writeToBuffer([]byte(newData))
-			continue
-		case *CloseMsg:
-			closeMsg := CloseMsg{sessionToken: msg.SessionToken()}
-
-			conn.writeToRemote(closeMsg.toByte())
-
-			log.Printf("sent close msg %+v", closeMsg)
-			continue
 		}
 	}
+
 }
 
 func (conn *LineReversalConnection) writeToRemote(data []byte) {
